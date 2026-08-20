@@ -10,7 +10,7 @@ const TOKEN = "botany"; // must match the app; change in both places if you want
 
 const HEADERS = [
   "timestamp","date","time","barista","mode","machine","grinder","bean","roaster",
-  "roast_date","days_off_roast","grind","dose_g","yield_g","ratio","time_s",
+  "roast_date","days_off_roast","water_temp_c","grind","dose_g","yield_g","ratio","time_s",
   "verdict","rating","notes","session_id","shot_id"
 ];
 

@@ -224,22 +224,23 @@ input,select{ font-family:inherit; color:var(--cream); }
 .duo{ display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:12px; margin-bottom:14px; }
 .mini-card{ margin-bottom:0; padding:14px 12px 12px; min-width:0; }
 .mini-row{ display:flex; align-items:center; gap:4px; }
-.mini-row .step-btn{ width:42px; height:42px; font-size:22px; }
+.mini-row .step-btn{ width:40px; height:40px; font-size:21px; }
 .mini-value{
   flex:1; min-width:0; background:none; border:none; outline:none; text-align:center;
-  font-family:var(--mono); font-weight:500; font-size:27px; color:var(--cream);
+  font-family:var(--mono); font-weight:500; font-size:23px; color:var(--cream);
+  font-variant-numeric:tabular-nums;
 }
 
 /* ---------- timer ---------- */
 .timer-card{ display:flex; align-items:center; justify-content:space-between; gap:14px; }
-.timer-row{ display:flex; align-items:baseline; gap:7px; }
+.timer-row{ display:flex; align-items:baseline; gap:6px; }
 .timer-value{
-  width:130px; background:none; border:none; outline:none;
+  width:3.4ch; min-width:3.4ch; background:none; border:none; outline:none;
   font-family:var(--mono); font-weight:500; font-size:44px; color:var(--cream);
   font-variant-numeric:tabular-nums;
 }
 .timer-value::placeholder{ color:var(--sage); opacity:.85; }
-.timer-unit{ color:var(--sage); font-size:13px; letter-spacing:1px; }
+.timer-unit{ color:var(--brass); font-size:12px; letter-spacing:1.6px; text-transform:uppercase; font-weight:600; }
 .ratio-chip{
   margin-top:7px; font-size:12px; color:var(--sage);
   display:inline-flex; gap:6px; align-items:baseline;
@@ -263,22 +264,35 @@ input,select{ font-family:inherit; color:var(--cream); }
 @keyframes pulse{ 50%{ box-shadow:0 0 0 11px rgba(201,169,106,.07), 0 0 40px rgba(201,169,106,.45);} }
 
 /* ---------- taste ---------- */
-.chips{ display:flex; gap:8px; }
+.chips{ display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:8px; }
 .chip{
-  flex:1; border:1px solid var(--line); border-radius:12px; padding:11px 4px;
-  font-size:13px; font-weight:600; color:var(--cream-dim);
+  display:flex; flex-direction:column; align-items:center; gap:3px;
+  border:1px solid var(--line); border-radius:12px; padding:10px 4px 9px;
+  font-size:14px; font-weight:600; color:var(--cream-dim);
   transition:all .15s;
+}
+.chip small{
+  font-size:9.5px; font-weight:600; letter-spacing:1.4px; text-transform:uppercase;
+  color:var(--sage);
 }
 .chip[data-v="sour"].on{ border-color:var(--sour); color:var(--sour); background:rgba(224,177,92,.1); }
 .chip[data-v="balanced"].on{ border-color:var(--balanced); color:var(--balanced); background:rgba(127,176,138,.12); }
 .chip[data-v="bitter"].on{ border-color:var(--bitter); color:var(--bitter); background:rgba(201,123,95,.1); }
-.hint{ min-height:18px; margin-top:8px; font-size:12.5px; color:var(--brass); font-style:italic; font-family:var(--serif); letter-spacing:.3px; }
-.rating{ display:flex; gap:10px; margin:10px 0 14px; }
-.rating button{
-  width:30px; height:30px; border-radius:50%;
-  border:1.5px solid var(--line); position:relative; transition:all .15s;
+.hint{ min-height:18px; margin-top:9px; text-align:center; font-size:13px; color:var(--brass); font-style:italic; font-family:var(--serif); letter-spacing:.3px; }
+.rating{
+  display:grid; grid-template-columns:repeat(5, 1fr); gap:2px;
+  border:1px solid var(--line); border-radius:11px; overflow:hidden;
+  margin:10px 0 14px;
 }
-.rating button.on{ border-color:var(--brass); background:radial-gradient(circle, var(--brass-hi) 0%, var(--brass) 70%); box-shadow:0 0 10px rgba(201,169,106,.4); }
+.rating button{
+  height:40px; background:rgba(14,31,23,.5);
+  font-family:var(--mono); font-size:13.5px; font-weight:500; color:var(--sage);
+  transition:background .15s, color .15s;
+}
+.rating button.on{
+  background:linear-gradient(160deg, var(--brass-hi), var(--brass));
+  color:#182015; font-weight:700;
+}
 .notes{
   width:100%; background:rgba(14,31,23,.55); border:1px solid var(--line); border-radius:12px;
   padding:12px 14px; font-size:14.5px; outline:none;

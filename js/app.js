@@ -157,7 +157,7 @@ function renderDial(){
   $("#sb-bean").textContent = bean ? bean.name : "—";
   const d = bean ? daysOff(bean.roastDate) : null;
   $("#sb-roast").textContent = d != null ? `${d}d off roast` : "";
-  $("#sb-gear").textContent = [gr?.name, ma?.name].filter(Boolean).join("  ·  ");
+  $("#sb-gear").textContent = [gr?.name, ma?.name, ses.waterTemp ? ses.waterTemp + "°C" : null].filter(Boolean).join("  ·  ");
   const n = sessionShots(ses.id).length;
   $("#sb-count").textContent = `${n} shot${n === 1 ? "" : "s"}`;
 
@@ -169,6 +169,7 @@ function renderDial(){
   $("#in-dose").value = fmt(draft.dose);
   $("#in-yield").value = fmt(draft.yield);
   $("#in-time").value = draft.time == null ? "" : fmt(draft.time);
+  sizeTimeInput();
   $("#in-notes").value = draft.notes;
   renderDelta(); renderRatio(); renderVerdict(); renderRating();
 }
@@ -194,16 +195,26 @@ function renderRating(){
 }
 
 /* ---------- steppers (tap + press-and-hold) ---------- */
+const activeRepeats = new Set();
+function stopAllRepeats(){ activeRepeats.forEach(stop => stop()); }
+window.addEventListener("pointerup", stopAllRepeats, true);
+window.addEventListener("blur", stopAllRepeats);
+document.addEventListener("visibilitychange", stopAllRepeats);
+
 function bindHoldButton(sel, fn){
   const btn = $(sel);
   let holdT = null, repT = null;
+  const stop = () => { clearTimeout(holdT); clearInterval(repT); holdT = repT = null; activeRepeats.delete(stop); };
   const fire = () => { fn(); if (navigator.vibrate) navigator.vibrate(8); };
   btn.addEventListener("pointerdown", e => {
-    e.preventDefault(); fire();
+    e.preventDefault();
+    try { btn.setPointerCapture(e.pointerId); } catch(_){}
+    fire();
     holdT = setTimeout(() => { repT = setInterval(fire, 110); }, 450);
+    activeRepeats.add(stop);
   });
-  ["pointerup", "pointerleave", "pointercancel"].forEach(ev =>
-    btn.addEventListener(ev, () => { clearTimeout(holdT); clearInterval(repT); }));
+  ["pointerup", "pointerleave", "pointercancel", "lostpointercapture"].forEach(ev =>
+    btn.addEventListener(ev, stop));
 }
 
 function bindStepper(minusId, plusId, inputId, key, stepFn, min){
@@ -215,19 +226,8 @@ function bindStepper(minusId, plusId, inputId, key, stepFn, min){
     input.value = fmt(draft[key], key === "grind" ? stepDecimals() : 1);
     if (key === "grind") renderDelta();
     if (key === "dose" || key === "yield") renderRatio();
-    if (navigator.vibrate) navigator.vibrate(8);
   };
-  [[minusId, -1], [plusId, 1]].forEach(([id, dir]) => {
-    const btn = $(id);
-    let holdT = null, repT = null;
-    const start = e => {
-      e.preventDefault(); apply(dir);
-      holdT = setTimeout(() => { repT = setInterval(() => apply(dir), 110); }, 450);
-    };
-    const stop = () => { clearTimeout(holdT); clearInterval(repT); };
-    btn.addEventListener("pointerdown", start);
-    ["pointerup", "pointerleave", "pointercancel"].forEach(ev => btn.addEventListener(ev, stop));
-  });
+  [[minusId, -1], [plusId, 1]].forEach(([id, dir]) => bindHoldButton(id, () => apply(dir)));
   input.addEventListener("change", () => {
     const v = parseFloat(input.value.replace(",", "."));
     if (!isNaN(v)) draft[key] = v;
@@ -239,9 +239,14 @@ function bindStepper(minusId, plusId, inputId, key, stepFn, min){
 
 /* ---------- timer ---------- */
 let timer = { running: false, startTs: 0, raf: 0 };
+function sizeTimeInput(){
+  const el = $("#in-time");
+  el.style.width = Math.max(3.4, (el.value.length || 3) + 0.6) + "ch";
+}
 function timerTick(){
   if (!timer.running) return;
   $("#in-time").value = fmt((performance.now() - timer.startTs) / 1000, 1);
+  sizeTimeInput();
   timer.raf = requestAnimationFrame(timerTick);
 }
 function toggleTimer(){
@@ -296,6 +301,7 @@ function shotRow(shot){
     (byId(S.grinders, ses.grinderId) || {}).name || "",
     bean.name || "", bean.roaster || "", bean.roastDate || "",
     bean.roastDate ? daysOff(bean.roastDate) : "",
+    ses.waterTemp ?? "",
     shot.grind, shot.dose, shot.yield, shot.ratio ?? "", shot.time ?? "",
     shot.verdict || "", shot.rating || "", shot.notes || "",
     ses.id || "", shot.id,
@@ -352,7 +358,7 @@ async function testSync(){
 
 /* ---------- CSV export ---------- */
 function exportCsv(){
-  const head = ["timestamp","date","time","barista","mode","machine","grinder","bean","roaster","roast_date","days_off_roast","grind","dose_g","yield_g","ratio","time_s","verdict","rating","notes","session_id","shot_id"];
+  const head = ["timestamp","date","time","barista","mode","machine","grinder","bean","roaster","roast_date","days_off_roast","water_temp_c","grind","dose_g","yield_g","ratio","time_s","verdict","rating","notes","session_id","shot_id"];
   const esc = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
   const csv = [head.join(","), ...S.shots.map(s => shotRow(s).map(esc).join(","))].join("\n");
   const a = document.createElement("a");
@@ -488,6 +494,7 @@ function populateSessionSelects(){
   $("#sel-bean").innerHTML = build(S.beans, last.beanId);
   $("#sel-grinder").innerHTML = build(S.grinders, last.grinderId);
   $("#sel-machine").innerHTML = build(S.machines, last.machineId);
+  $("#in-temp").value = last.waterTemp ?? "";
   updateRecipeHint();
 }
 function updateRecipeHint(){
@@ -518,10 +525,12 @@ function handleSessionClose(){
   if ([beanId, grinderId, machineId].some(v => !v || v === "__add")){
     toast("Pick bean, grinder & machine"); return;
   }
+  const t = parseFloat($("#in-temp").value.replace(",", "."));
+  const waterTemp = isNaN(t) ? null : t;
   const ses = activeSession();
-  if (ses){ Object.assign(ses, { beanId, grinderId, machineId }); }
+  if (ses){ Object.assign(ses, { beanId, grinderId, machineId, waterTemp }); }
   else {
-    const s = { id: uid(), ts: new Date().toISOString(), beanId, grinderId, machineId };
+    const s = { id: uid(), ts: new Date().toISOString(), beanId, grinderId, machineId, waterTemp };
     S.sessions.push(s); S.activeSessionId = s.id;
   }
   save(); prefillDraft(); renderDial();
@@ -576,9 +585,11 @@ function init(){
   bindStepper("#yield-minus", "#yield-plus", "#in-yield", "yield", () => 0.5, 0);
 
   $("#btn-timer").addEventListener("click", toggleTimer);
+  $("#in-time").addEventListener("input", sizeTimeInput);
   $("#in-time").addEventListener("change", () => {
     const v = parseFloat($("#in-time").value.replace(",", "."));
     draft.time = isNaN(v) ? null : v;
+    sizeTimeInput();
   });
   $$("#verdict-chips .chip").forEach(c => c.addEventListener("click", () => {
     draft.verdict = draft.verdict === c.dataset.v ? null : c.dataset.v;

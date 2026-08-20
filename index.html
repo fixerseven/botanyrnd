@@ -109,13 +109,13 @@
       <div class="card taste-card">
         <div class="card-label">Verdict</div>
         <div class="chips" id="verdict-chips">
-          <button class="chip" data-v="sour">Sour · fast</button>
-          <button class="chip" data-v="balanced">Balanced</button>
-          <button class="chip" data-v="bitter">Bitter · slow</button>
+          <button class="chip" data-v="sour">Sour<small>under</small></button>
+          <button class="chip" data-v="balanced">Balanced<small>sweet spot</small></button>
+          <button class="chip" data-v="bitter">Bitter<small>over</small></button>
         </div>
         <div class="hint" id="verdict-hint"></div>
         <div class="rating" id="rating">
-          <button data-r="1" aria-label="1 star"></button><button data-r="2" aria-label="2"></button><button data-r="3" aria-label="3"></button><button data-r="4" aria-label="4"></button><button data-r="5" aria-label="5"></button>
+          <button data-r="1" aria-label="Rate 1 of 5">1</button><button data-r="2" aria-label="Rate 2 of 5">2</button><button data-r="3" aria-label="Rate 3 of 5">3</button><button data-r="4" aria-label="Rate 4 of 5">4</button><button data-r="5" aria-label="Rate 5 of 5">5</button>
         </div>
         <input class="notes" id="in-notes" type="text" placeholder="Tasting notes — cherry, cocoa, channeling…" autocomplete="off">
       </div>
@@ -180,6 +180,7 @@
     <label>Bean<select id="sel-bean"></select></label>
     <label>Grinder<select id="sel-grinder"></select></label>
     <label>Machine<select id="sel-machine"></select></label>
+    <label>Water temp °C <span class="unit">optional</span><input id="in-temp" type="text" inputmode="decimal" placeholder="93" autocomplete="off"></label>
     <div class="dlg-recipe hidden" id="dlg-recipe"></div>
     <div class="dlg-actions">
       <button value="cancel" class="btn-ghost">Cancel</button>

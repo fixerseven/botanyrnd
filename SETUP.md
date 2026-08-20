@@ -11,6 +11,8 @@
 4. Click **Deploy**, authorize when prompted, and copy the **Web app URL** (ends in `/exec`).
 5. In the Botany Lab app: **Settings → Google Sheet sync URL** → paste → **Test connection** should toast "Connected to sheet ✓".
 
+> The script writes to a tab named **Shots** that it creates itself with the full header row (including `water_temp_c`). The tab that came with the spreadsheet is just a placeholder — feel free to delete it once **Shots** appears.
+
 Every phone with that URL in Settings appends to the same sheet. Set a **Barista name** per phone so rows say who pulled the shot. Retries are de-duplicated by shot id, so a flaky connection never double-logs.
 
 > If you later edit Code.gs, use **Deploy → Manage deployments → edit → New version** — the URL stays the same.
