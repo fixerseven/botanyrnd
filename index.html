@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Botany Lab</title>
+<meta name="theme-color" content="#0E1F17">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Botany Lab">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400..700;1,400..700&family=Instrument+Sans:wght@400;500;600;700&family=Spline+Sans+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="wordmark">
+    <span class="wordmark-main">Botany</span>
+    <span class="wordmark-sub">R&amp;D&nbsp;Lab</span>
+  </div>
+  <button id="sync-chip" class="sync-chip" title="Sync status">
+    <span class="sync-dot"></span><span id="sync-label">local</span>
+  </button>
+</header>
+
+<main id="main">
+
+  <!-- ============ DIAL (shot logger) ============ -->
+  <section class="view active" id="view-dial">
+
+    <div id="session-empty" class="hero-card hidden">
+      <div class="hero-leaf" aria-hidden="true"></div>
+      <h2>Dial in something<br><em>beautiful.</em></h2>
+      <p>Start a session to lock in your machine, grinder &amp; bean — then log shots with one thumb.</p>
+      <button class="btn-primary" id="btn-start-session">Start a session</button>
+    </div>
+
+    <div id="session-active" class="hidden">
+
+      <button class="session-bar" id="session-bar">
+        <div class="session-bean">
+          <span id="sb-bean" class="sb-bean">—</span>
+          <span id="sb-roast" class="sb-roast"></span>
+        </div>
+        <div class="session-gear"><span id="sb-gear">—</span></div>
+        <div class="session-meta"><span id="sb-count">0 shots</span><span class="sb-edit">edit ›</span></div>
+      </button>
+
+      <!-- GRIND — the hero: rotary collar dial -->
+      <div class="card grind-card">
+        <div class="card-label">Grind <span id="grind-unit" class="unit"></span></div>
+        <div class="dial-wrap" id="dial-wrap">
+          <div class="dial-square" id="dial-square">
+            <svg class="dial-ring" id="dial-ring" viewBox="0 0 300 300" aria-hidden="true"></svg>
+          </div>
+          <div class="dial-index" aria-hidden="true"></div>
+        </div>
+        <div class="grind-hero">
+          <button class="step-btn" id="grind-minus" aria-label="Finer">−</button>
+          <input class="grind-value" id="in-grind" type="text" inputmode="decimal" autocomplete="off" aria-label="Grind setting">
+          <button class="step-btn" id="grind-plus" aria-label="Coarser">+</button>
+        </div>
+        <div class="grind-sub">
+          <span class="finer">‹ finer</span>
+          <span id="grind-delta" class="delta"></span>
+          <span class="coarser">coarser ›</span>
+        </div>
+      </div>
+
+      <!-- DOSE / YIELD -->
+      <div class="duo">
+        <div class="card mini-card">
+          <div class="card-label">Dose <span class="unit">g in</span></div>
+          <div class="mini-row">
+            <button class="step-btn" id="dose-minus">−</button>
+            <input class="mini-value" id="in-dose" type="text" inputmode="decimal">
+            <button class="step-btn" id="dose-plus">+</button>
+          </div>
+        </div>
+        <div class="card mini-card">
+          <div class="card-label">Yield <span class="unit">g out</span></div>
+          <div class="mini-row">
+            <button class="step-btn" id="yield-minus">−</button>
+            <input class="mini-value" id="in-yield" type="text" inputmode="decimal">
+            <button class="step-btn" id="yield-plus">+</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- TIMER -->
+      <div class="card timer-card">
+        <div class="timer-left">
+          <div class="card-label">Extraction</div>
+          <div class="timer-row">
+            <input class="timer-value" id="in-time" type="text" inputmode="decimal" placeholder="0.0">
+            <span class="timer-unit">sec</span>
+          </div>
+          <div class="ratio-chip">ratio <strong id="ratio-out">1 : 2.0</strong></div>
+        </div>
+        <button class="timer-btn" id="btn-timer"><span id="timer-btn-label">Start</span></button>
+      </div>
+
+      <!-- TASTE -->
+      <div class="card taste-card">
+        <div class="card-label">Verdict</div>
+        <div class="chips" id="verdict-chips">
+          <button class="chip" data-v="sour">Sour · fast</button>
+          <button class="chip" data-v="balanced">Balanced</button>
+          <button class="chip" data-v="bitter">Bitter · slow</button>
+        </div>
+        <div class="hint" id="verdict-hint"></div>
+        <div class="rating" id="rating">
+          <button data-r="1" aria-label="1 star"></button><button data-r="2" aria-label="2"></button><button data-r="3" aria-label="3"></button><button data-r="4" aria-label="4"></button><button data-r="5" aria-label="5"></button>
+        </div>
+        <input class="notes" id="in-notes" type="text" placeholder="Tasting notes — cherry, cocoa, channeling…" autocomplete="off">
+      </div>
+
+      <button class="btn-primary btn-log" id="btn-log">Log shot</button>
+    </div>
+  </section>
+
+  <!-- ============ HISTORY ============ -->
+  <section class="view" id="view-history">
+    <h1 class="view-title">History</h1>
+    <div id="history-list"></div>
+  </section>
+
+  <!-- ============ LIBRARY ============ -->
+  <section class="view" id="view-library">
+    <h1 class="view-title">Library</h1>
+    <div class="lib-group"><div class="lib-head"><h3>Beans</h3><button class="btn-ghost" data-add="bean">+ Add</button></div><div id="lib-beans"></div></div>
+    <div class="lib-group"><div class="lib-head"><h3>Grinders</h3><button class="btn-ghost" data-add="grinder">+ Add</button></div><div id="lib-grinders"></div></div>
+    <div class="lib-group"><div class="lib-head"><h3>Machines</h3><button class="btn-ghost" data-add="machine">+ Add</button></div><div id="lib-machines"></div></div>
+  </section>
+
+  <!-- ============ SETTINGS ============ -->
+  <section class="view" id="view-settings">
+    <h1 class="view-title">Settings</h1>
+    <div class="card set-card">
+      <label class="set-label">Barista name</label>
+      <input id="set-barista" type="text" placeholder="Who's pulling shots on this phone" autocomplete="off">
+    </div>
+    <div class="card set-card">
+      <label class="set-label">Google Sheet sync URL <span class="unit">Apps Script</span></label>
+      <input id="set-url" type="url" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off">
+      <div class="set-row">
+        <button class="btn-ghost" id="btn-test-sync">Test connection</button>
+        <button class="btn-ghost" id="btn-sync-now">Sync now</button>
+      </div>
+      <div class="set-status" id="sync-status">No sync URL yet — shots are stored on this phone.</div>
+    </div>
+    <div class="card set-card">
+      <label class="set-label">Data</label>
+      <div class="set-row">
+        <button class="btn-ghost" id="btn-export">Export CSV</button>
+      </div>
+      <div class="set-status" id="data-count"></div>
+    </div>
+    <p class="colophon">Botany R&amp;D Lab · espresso first, teapresso next</p>
+  </section>
+</main>
+
+<!-- ============ TAB BAR ============ -->
+<nav class="tabbar">
+  <button class="tab active" data-view="dial"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 7v5l3.2 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><span>Dial</span></button>
+  <button class="tab" data-view="history"><svg viewBox="0 0 24 24"><path d="M4 18V9m5.4 9V5m5.3 13v-7m5.3 7V8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg><span>History</span></button>
+  <button class="tab" data-view="library"><svg viewBox="0 0 24 24"><path d="M12 21c0-6 1-11 8-14-1 7-2 12-8 14Zm0 0c0-5-1-9-8-11 1 6 2 9 8 11Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg><span>Library</span></button>
+  <button class="tab" data-view="settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 3v3m0 12v3M3 12h3m12 0h3M5.6 5.6l2.1 2.1m8.6 8.6 2.1 2.1m0-12.8-2.1 2.1M7.7 16.3l-2.1 2.1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><span>Settings</span></button>
+</nav>
+
+<!-- ============ SESSION DIALOG ============ -->
+<dialog id="dlg-session">
+  <form method="dialog" class="dlg">
+    <h2 id="dlg-session-title">New session</h2>
+    <label>Bean<select id="sel-bean"></select></label>
+    <label>Grinder<select id="sel-grinder"></select></label>
+    <label>Machine<select id="sel-machine"></select></label>
+    <div class="dlg-recipe hidden" id="dlg-recipe"></div>
+    <div class="dlg-actions">
+      <button value="cancel" class="btn-ghost">Cancel</button>
+      <button value="end" class="btn-ghost danger hidden" id="btn-end-session">End session</button>
+      <button value="ok" class="btn-primary" id="btn-session-ok">Start</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ============ LIBRARY ITEM DIALOG ============ -->
+<dialog id="dlg-item">
+  <form method="dialog" class="dlg" id="form-item">
+    <h2 id="dlg-item-title">Add</h2>
+    <div id="dlg-item-fields"></div>
+    <div class="dlg-actions">
+      <button value="cancel" class="btn-ghost">Cancel</button>
+      <button value="delete" class="btn-ghost danger hidden" id="btn-item-delete">Delete</button>
+      <button value="ok" class="btn-primary">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toast" class="toast"></div>
+
+<script src="js/app.js"></script>
+</body>
+</html>
