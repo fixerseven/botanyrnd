@@ -9,7 +9,7 @@ const DEFAULT_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzxgJjTni9Pd
 
 /* ---------- state ---------- */
 const defaults = () => ({
-  machines: [], grinders: [], beans: [],
+  machines: [], grinders: [], beans: [], teas: [],
   sessions: [], shots: [],
   queue: [],                       // shot ids not yet synced
   settings: { scriptUrl: DEFAULT_SCRIPT_URL, barista: "" },
@@ -201,10 +201,10 @@ function renderDial(){
   $("#session-active").classList.toggle("hidden", !ses);
   if (!ses) return;
 
-  const bean = byId(S.beans, ses.beanId), gr = byId(S.grinders, ses.grinderId), ma = byId(S.machines, ses.machineId);
+  const bean = beanOf(ses), gr = byId(S.grinders, ses.grinderId), ma = byId(S.machines, ses.machineId);
   $("#sb-bean").textContent = bean ? bean.name : "—";
-  const d = bean ? daysOff(bean.roastDate) : null;
-  $("#sb-roast").textContent = d != null ? `${d}d off roast` : "";
+  const d = bean && bean.roastDate ? daysOff(bean.roastDate) : null;
+  $("#sb-roast").textContent = d != null ? `${d}d off roast` : (bean && bean.type ? bean.type : "");
   $("#sb-gear").textContent = [gr?.name, ma?.name, ses.waterTemp ? ses.waterTemp + "°C" : null, ses.pressure ? ses.pressure + " bar" : null].filter(Boolean).join("  ·  ");
   const n = sessionShots(ses.id).length;
   $("#sb-count").textContent = `${n} shot${n === 1 ? "" : "s"}`;
@@ -352,7 +352,7 @@ function logShot(){
    ============================================================ */
 function shotRow(shot){
   const ses = byId(S.sessions, shot.sessionId) || {};
-  const bean = byId(S.beans, ses.beanId) || {};
+  const bean = beanOf(ses) || {};
   const mode = sessionMode(ses);
   const dt = new Date(shot.ts);
   return [
@@ -480,7 +480,9 @@ function exportCsv(){
 /* ============================================================
    SHARED LIBRARY SYNC (Phase 4) — push+pull merge via lib_sync
    ============================================================ */
-const KIND_COLL = { bean: "beans", grinder: "grinders", machine: "machines" };
+const KIND_COLL = { bean: "beans", tea: "teas", grinder: "grinders", machine: "machines" };
+/* sessions reference coffee beans OR teas through beanId */
+function beanOf(ses){ return byId(S.beans, ses.beanId) || byId(S.teas, ses.beanId) || null; }
 let libSyncing = false;
 async function libSync(){
   const url = S.settings.scriptUrl;
@@ -523,7 +525,7 @@ const normName = s => String(s || "").trim().toLowerCase().replace(/\s+/g, " ");
    winner, losers are soft-deleted, and this phone's sessions are remapped. */
 function dedupeLibrary(){
   let changed = false;
-  const refKeys = { beans: "beanId", grinders: "grinderId", machines: "machineId" };
+  const refKeys = { beans: "beanId", teas: "beanId", grinders: "grinderId", machines: "machineId" };
   Object.entries(refKeys).forEach(([coll, refKey]) => {
     const groups = {};
     alive(S[coll]).forEach(x => { const k = normName(x.name); (groups[k] = groups[k] || []).push(x); });
@@ -622,7 +624,7 @@ function renderHistory(){
   wrap.innerHTML = sessions.map(ses => {
     const shots = sessionShots(ses.id); if (!shots.length && ses.id !== S.activeSessionId) return "";
     const mode = sessionMode(ses);
-    const beanName = ses.remote ? ses.beanName : (byId(S.beans, ses.beanId) || {}).name;
+    const beanName = ses.remote ? ses.beanName : (beanOf(ses) || {}).name;
     const gearBits = ses.remote
       ? [ses.grinderName, ses.machineName, ses.barista ? "☺ " + ses.barista : null]
       : [(byId(S.grinders, ses.grinderId) || {}).name, (byId(S.machines, ses.machineId) || {}).name];
@@ -675,6 +677,11 @@ const ITEM_FIELDS = {
     { k: "roaster", label: "Roaster", ph: "Local roastery" },
     { k: "roastDate", label: "Roast date", type: "date" },
   ],
+  tea: [
+    { k: "name", label: "Tea name", ph: "Jasmine Silver Needle" },
+    { k: "roaster", label: "Source / supplier", ph: "Tea house or farm" },
+    { k: "type", label: "Type", ph: "green, oolong, black, herbal…" },
+  ],
   grinder: [
     { k: "name", label: "Grinder", ph: "Niche Zero" },
     { k: "max", label: "Dial range (highest number)", ph: "90", type: "text", inputmode: "decimal" },
@@ -695,6 +702,7 @@ function renderLibrary(){
     const d = daysOff(b.roastDate);
     return item(b, "bean", d != null ? `${d}d` : "");
   }).join("") || `<div class="empty-note" style="padding:14px">Add your first bean.</div>`;
+  $("#lib-teas").innerHTML = alive(S.teas).map(t => item(t, "tea", escapeHtml(t.type || ""))).join("") || `<div class="empty-note" style="padding:14px">Add your first tea.</div>`;
   $("#lib-grinders").innerHTML = alive(S.grinders).map(g => item(g, "grinder", `step ${g.step || 1}`)).join("") || `<div class="empty-note" style="padding:14px">Add a grinder.</div>`;
   $("#lib-machines").innerHTML = alive(S.machines).map(m => item(m, "machine", "")).join("") || `<div class="empty-note" style="padding:14px">Add a machine.</div>`;
   $$("#view-library .lib-item").forEach(b => b.addEventListener("click", () => {
@@ -702,7 +710,7 @@ function renderLibrary(){
     openItemDialog(type, id);
   }));
 }
-function collName(type){ return type === "bean" ? "beans" : type === "grinder" ? "grinders" : "machines"; }
+function collName(type){ return KIND_COLL[type] || "machines"; }
 let itemCtx = null;
 function openItemDialog(type, id){
   itemCtx = { type, id };
@@ -729,15 +737,22 @@ function handleItemClose(){
     $$("#dlg-item-fields input").forEach(i => data[i.name] = i.value.trim());
     if (!data.name){ itemCtx = null; return; }
     data.updatedAt = Date.now();
+    let savedId = itemCtx.id;
     if (itemCtx.id) Object.assign(byId(coll, itemCtx.id), data);
     else {
       // adding a name that already exists updates that item instead of duplicating it
       const twin = alive(coll).find(x => normName(x.name) === normName(data.name));
-      if (twin) Object.assign(twin, data);
-      else coll.push(Object.assign({ id: uid() }, data));
+      if (twin){ Object.assign(twin, data); savedId = twin.id; }
+      else { savedId = uid(); coll.push(Object.assign({ id: savedId }, data)); }
     }
     save(); renderLibrary(); toast("Saved"); libSync();
-    if (sessionDlgOpen){ populateSessionSelects(); $("#dlg-session").showModal(); }
+    if (sessionDlgOpen){
+      populateSessionSelects(true);
+      const sel = itemCtx.type === "grinder" ? "#sel-grinder" : itemCtx.type === "machine" ? "#sel-machine" : "#sel-bean";
+      if ($(sel).querySelector(`option[value="${savedId}"]`)) $(sel).value = savedId;
+      updateRecipeHint();
+      $("#dlg-session").showModal();
+    }
   }
   itemCtx = null;
 }
@@ -747,26 +762,32 @@ function handleItemClose(){
    ============================================================ */
 let sessionDlgOpen = false;
 let dlgMode = "espresso";
+const buildOpts = (arr, sel) => {
+  const hasSel = arr.some(x => x.id === sel);
+  return (hasSel ? "" : `<option value="" disabled selected hidden>Choose…</option>`)
+    + arr.map(x => `<option value="${x.id}" ${x.id === sel ? "selected" : ""}>${escapeHtml(x.name)}</option>`).join("")
+    + `<option value="__add">+ Add new…</option>`;
+};
+function fillBeanSelect(sel){
+  const src = dlgMode === "espresso" ? S.beans : S.teas;   // teapresso & tea brew from the Teas list
+  $("#sel-bean").innerHTML = buildOpts(alive(src), sel);
+  updateRecipeHint();
+}
 function setDlgMode(m){
   dlgMode = m;
   $$("#mode-seg button").forEach(b => b.classList.toggle("on", b.dataset.m === m));
   $("#lbl-bean").firstChild.textContent = m === "espresso" ? "Bean" : "Tea / leaf";
+  $("#lbl-grinder").classList.toggle("hidden", m === "tea");
+  fillBeanSelect($("#sel-bean").value);
 }
-function populateSessionSelects(){
+function populateSessionSelects(keepMode){
   const last = activeSession() || [...S.sessions].reverse().find(s => !s.remote) || {};
-  setDlgMode(sessionMode(last));
-  const build = (arr, sel) => {
-    const hasSel = arr.some(x => x.id === sel);
-    return (hasSel ? "" : `<option value="" disabled selected hidden>Choose…</option>`)
-      + arr.map(x => `<option value="${x.id}" ${x.id === sel ? "selected" : ""}>${escapeHtml(x.name)}</option>`).join("")
-      + `<option value="__add">+ Add new…</option>`;
-  };
-  $("#sel-bean").innerHTML = build(alive(S.beans), last.beanId);
-  $("#sel-grinder").innerHTML = build(alive(S.grinders), last.grinderId);
-  $("#sel-machine").innerHTML = build(alive(S.machines), last.machineId);
+  setDlgMode(keepMode ? dlgMode : sessionMode(last));
+  fillBeanSelect(last.beanId);
+  $("#sel-grinder").innerHTML = buildOpts(alive(S.grinders), last.grinderId);
+  $("#sel-machine").innerHTML = buildOpts(alive(S.machines), last.machineId);
   $("#in-temp").value = last.waterTemp ?? "";
   $("#in-pressure").value = last.pressure ?? "";
-  updateRecipeHint();
 }
 function updateRecipeHint(){
   const beanId = $("#sel-bean").value;
@@ -792,9 +813,11 @@ function handleSessionClose(){
     return;
   }
   if (val !== "ok") return;
-  const beanId = $("#sel-bean").value, grinderId = $("#sel-grinder").value, machineId = $("#sel-machine").value;
-  if ([beanId, grinderId, machineId].some(v => !v || v === "__add")){
-    toast("Pick bean, grinder & machine"); return;
+  const beanId = $("#sel-bean").value, machineId = $("#sel-machine").value;
+  const grinderId = dlgMode === "tea" ? "" : $("#sel-grinder").value;
+  const required = dlgMode === "tea" ? [beanId, machineId] : [beanId, grinderId, machineId];
+  if (required.some(v => !v || v === "__add")){
+    toast(dlgMode === "tea" ? "Pick a tea & machine" : "Pick bean, grinder & machine"); return;
   }
   const t = parseFloat($("#in-temp").value.replace(",", "."));
   const waterTemp = isNaN(t) ? null : t;
@@ -813,7 +836,7 @@ function handleSessionClose(){
   document.addEventListener("change", e => {
     if (e.target.id !== id) return;
     if (e.target.value === "__add"){
-      const type = id === "sel-bean" ? "bean" : id === "sel-grinder" ? "grinder" : "machine";
+      const type = id === "sel-bean" ? (dlgMode === "espresso" ? "bean" : "tea") : id === "sel-grinder" ? "grinder" : "machine";
       $("#dlg-session").close("cancel");
       sessionDlgOpen = true;             // reopen after item saved
       openItemDialog(type, null);
