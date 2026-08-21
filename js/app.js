@@ -672,7 +672,7 @@ function show(view){
   if (view === "settings"){
     $("#set-barista").value = S.settings.barista;
     $("#set-url").value = S.settings.scriptUrl;
-    $("#data-count").textContent = `${S.shots.length} shots · ${S.sessions.length} sessions on this phone.`;
+    $("#data-count").textContent = `${S.shots.length} shots · ${S.sessions.length} sessions on this phone · shared library: ${alive(S.beans).length} beans, ${alive(S.grinders).length} grinders, ${alive(S.machines).length} machines.`;
     renderSyncChip();
   }
   window.scrollTo({ top: 0 });
@@ -723,13 +723,23 @@ function init(){
     $("#set-url").value = DEFAULT_SCRIPT_URL;
     renderSyncChip(); flushQueue(); toast("Using the shop endpoint");
   });
-  $("#btn-sync-now").addEventListener("click", () => { flushQueue(); });
+  $("#btn-sync-now").addEventListener("click", async () => {
+    toast("Syncing…");
+    await Promise.all([flushQueue(), libSync()]);
+    if ($("#view-library").classList.contains("active")) renderLibrary();
+    show("settings");
+    toast("Synced");
+  });
   $("#btn-export").addEventListener("click", exportCsv);
   $("#sync-chip").addEventListener("click", () => show("settings"));
 
   window.addEventListener("online", () => { flushQueue(); libSync(); });
+  // PWAs resumed from the switcher don't relaunch — sync whenever we come back to the foreground
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible"){ flushQueue(); libSync(); }
+  });
   setInterval(flushQueue, 30000);
-  setInterval(libSync, 300000);
+  setInterval(libSync, 120000);
 
   if (activeSession()) prefillDraft();
   renderDial(); renderSyncChip();
