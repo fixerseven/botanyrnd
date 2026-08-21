@@ -354,6 +354,8 @@ function renderSyncChip(mode){
       ? "No sync URL yet — shots are stored on this phone. See SETUP.md to connect your Google Sheet."
       : S.queue.length ? `${S.queue.length} shot(s) waiting to sync.` : "All shots synced to the Google Sheet.";
   }
+  const rb = $("#btn-default-url");
+  if (rb) rb.classList.toggle("hidden", S.settings.scriptUrl === DEFAULT_SCRIPT_URL);
 }
 async function testSync(){
   const url = $("#set-url").value.trim();
@@ -615,6 +617,11 @@ function init(){
   $("#set-barista").addEventListener("change", () => { S.settings.barista = $("#set-barista").value.trim(); save(); });
   $("#set-url").addEventListener("change", () => { S.settings.scriptUrl = $("#set-url").value.trim(); save(); renderSyncChip(); flushQueue(); });
   $("#btn-test-sync").addEventListener("click", testSync);
+  $("#btn-default-url").addEventListener("click", () => {
+    S.settings.scriptUrl = DEFAULT_SCRIPT_URL; save();
+    $("#set-url").value = DEFAULT_SCRIPT_URL;
+    renderSyncChip(); flushQueue(); toast("Using the shop endpoint");
+  });
   $("#btn-sync-now").addEventListener("click", () => { flushQueue(); });
   $("#btn-export").addEventListener("click", exportCsv);
   $("#sync-chip").addEventListener("click", () => show("settings"));
