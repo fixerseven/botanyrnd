@@ -14,6 +14,7 @@ const defaults = () => ({
   queue: [],                       // shot ids not yet synced
   settings: { scriptUrl: DEFAULT_SCRIPT_URL, barista: "" },
   activeSessionId: null,
+  lastShotPull: 0,
 });
 
 let S = load();
@@ -47,14 +48,50 @@ function toast(msg){
   clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("show"), 1900);
 }
 function activeSession(){ return byId(S.sessions, S.activeSessionId) || null; }
-function sessionShots(sid){ return S.shots.filter(s => s.sessionId === sid); }
+function sessionShots(sid){
+  return S.shots.filter(s => s.sessionId === sid).sort((a, b) => new Date(a.ts) - new Date(b.ts));
+}
 function lastShotIn(sid){ const arr = sessionShots(sid); return arr[arr.length - 1] || null; }
 function starredFor(beanId){
   return [...S.shots].reverse().find(s => s.starred && byId(S.sessions, s.sessionId)?.beanId === beanId) || null;
 }
 
+/* ---------- brew modes ---------- */
+const MODES = {
+  espresso: {
+    name: "Espresso", dial: true, infusion: false,
+    dose: ["Dose", "g in"], yield: ["Yield", "g out"],
+    chips: { sour: ["Sour", "under"], balanced: ["Balanced", "sweet spot"], bitter: ["Bitter", "over"] },
+    hints: { sour: "Under-extracted — try a finer grind.", bitter: "Over-extracted — try a coarser grind.", balanced: "Lovely. Star it in History." },
+    sheet: { sour: "sour", balanced: "balanced", bitter: "bitter" },
+    defaults: { dose: 18, yield: 36 },
+  },
+  teapresso: {
+    name: "Teapresso", dial: true, infusion: false,
+    dose: ["Leaf", "g in"], yield: ["Yield", "g out"],
+    chips: { sour: ["Weak", "thin"], balanced: ["Balanced", "sweet spot"], bitter: ["Tannic", "over"] },
+    hints: { sour: "Thin — try finer, hotter, or longer.", bitter: "Tannic — try coarser, cooler, or shorter.", balanced: "Lovely. Star it in History." },
+    sheet: { sour: "weak", balanced: "balanced", bitter: "tannic" },
+    defaults: { dose: 8, yield: 40 },
+  },
+  tea: {
+    name: "Tea", dial: false, infusion: true,
+    dose: ["Leaf", "g"], yield: ["Water", "ml"],
+    chips: { sour: ["Weak", "thin"], balanced: ["Balanced", "sweet spot"], bitter: ["Tannic", "bitter"] },
+    hints: { sour: "Weak — steep longer or hotter.", bitter: "Astringent — steep shorter or cooler.", balanced: "Lovely. Star it in History." },
+    sheet: { sour: "weak", balanced: "balanced", bitter: "tannic" },
+    defaults: { dose: 5, yield: 200 },
+  },
+};
+const sessionMode = ses => MODES[(ses && ses.mode) || "espresso"] ? ((ses && ses.mode) || "espresso") : "espresso";
+function activeMode(){ return MODES[sessionMode(activeSession())]; }
+function verdictText(shot){
+  const ses = byId(S.sessions, shot.sessionId);
+  return MODES[sessionMode(ses)].sheet[shot.verdict] || shot.verdict;
+}
+
 /* ---------- draft (current shot being composed) ---------- */
-let draft = { grind: 5.0, dose: 18.0, yield: 36.0, time: null, verdict: null, rating: 0, notes: "" };
+let draft = { grind: 5.0, dose: 18.0, yield: 36.0, time: null, verdict: null, rating: 0, notes: "", infusion: 1 };
 let lastLoggedGrind = null;   // for the delta pill
 
 function grinderStep(){
@@ -141,16 +178,18 @@ function prefillDraft(){
   const ses = activeSession(); if (!ses) return;
   const last = lastShotIn(ses.id);
   const star = starredFor(ses.beanId);
+  const M = activeMode();
   const src = last || star;
   if (src){
     draft.grind = src.grind; draft.dose = src.dose; draft.yield = src.yield;
   } else {
-    // last shot ever on this grinder, else defaults
+    // last shot ever on this grinder, else mode defaults
     const prior = [...S.shots].reverse().find(s => byId(S.sessions, s.sessionId)?.grinderId === ses.grinderId);
     draft.grind = prior ? prior.grind : Math.round(grinderMax() / 3);
-    draft.dose = prior ? prior.dose : 18.0;
-    draft.yield = prior ? prior.yield : 36.0;
+    draft.dose = M.defaults.dose;
+    draft.yield = M.defaults.yield;
   }
+  draft.infusion = M.infusion ? (last ? (last.infusion || 1) + 1 : 1) : 1;
   lastLoggedGrind = last ? last.grind : (star ? star.grind : null);
   draft.time = null; draft.verdict = null; draft.rating = 0; draft.notes = "";
 }
@@ -170,11 +209,21 @@ function renderDial(){
   const n = sessionShots(ses.id).length;
   $("#sb-count").textContent = `${n} shot${n === 1 ? "" : "s"}`;
 
+  const M = activeMode();
+  $("#grind-card").classList.toggle("hidden", !M.dial);
+  $("#infusion-card").classList.toggle("hidden", !M.infusion);
+  $("#dose-label").innerHTML = `${M.dose[0]} <span class="unit">${M.dose[1]}</span>`;
+  $("#yield-label").innerHTML = `${M.yield[0]} <span class="unit">${M.yield[1]}</span>`;
+  Object.entries(M.chips).forEach(([code, [label, sub]]) => {
+    const chip = $(`#verdict-chips .chip[data-v="${code}"]`);
+    if (chip) chip.innerHTML = `${label}<small>${sub}</small>`;
+  });
+
   const gu = gr?.unit ? gr.unit : "";
   $("#grind-unit").textContent = `0–${grinderMax()}${gu ? " · " + gu : ""}`;
 
-  buildDialSvg();
-  setGrind(draft.grind);
+  if (M.dial){ buildDialSvg(); setGrind(draft.grind); }
+  if (M.infusion) $("#in-infusion").value = draft.infusion || 1;
   $("#in-dose").value = fmt(draft.dose);
   $("#in-yield").value = fmt(draft.yield);
   $("#in-time").value = draft.time == null ? "" : fmt(draft.time);
@@ -196,8 +245,7 @@ function renderRatio(){
 }
 function renderVerdict(){
   $$("#verdict-chips .chip").forEach(c => c.classList.toggle("on", c.dataset.v === draft.verdict));
-  const hints = { sour: "Under-extracted — try a finer grind.", bitter: "Over-extracted — try a coarser grind.", balanced: "Lovely. Star it in History." };
-  $("#verdict-hint").textContent = draft.verdict ? hints[draft.verdict] : "";
+  $("#verdict-hint").textContent = draft.verdict ? activeMode().hints[draft.verdict] : "";
 }
 function renderRating(){
   $$("#rating button").forEach(b => b.classList.toggle("on", +b.dataset.r <= draft.rating));
@@ -279,18 +327,21 @@ function logShot(){
   const t = parseFloat($("#in-time").value.replace(",", "."));
   draft.time = isNaN(t) ? null : t;
   draft.notes = $("#in-notes").value.trim();
+  const M = activeMode();
   const shot = {
     id: uid(), sessionId: ses.id, ts: new Date().toISOString(),
-    grind: draft.grind, dose: draft.dose, yield: draft.yield,
+    grind: M.dial ? draft.grind : null, dose: draft.dose, yield: draft.yield,
     time: draft.time, ratio: draft.dose > 0 ? +(draft.yield / draft.dose).toFixed(2) : null,
+    infusion: M.infusion ? (draft.infusion || 1) : null,
     verdict: draft.verdict, rating: draft.rating, notes: draft.notes, starred: false,
   };
   S.shots.push(shot);
   S.queue.push(shot.id);
   save();
   const n = sessionShots(ses.id).length;
-  toast(`Shot ${n} logged — ${fmt(shot.grind, stepDecimals())} · ${shot.time != null ? fmt(shot.time) + "s" : "no time"}`);
+  toast(`Shot ${n} logged — ${M.dial ? fmt(shot.grind, stepDecimals()) : "steep " + (shot.infusion || 1)} · ${shot.time != null ? fmt(shot.time) + "s" : "no time"}`);
   lastLoggedGrind = shot.grind;
+  if (M.infusion) draft.infusion = (shot.infusion || 1) + 1;
   draft.time = null; draft.verdict = null; draft.rating = 0; draft.notes = "";
   renderDial(); renderSyncChip();
   flushQueue();
@@ -302,19 +353,67 @@ function logShot(){
 function shotRow(shot){
   const ses = byId(S.sessions, shot.sessionId) || {};
   const bean = byId(S.beans, ses.beanId) || {};
+  const mode = sessionMode(ses);
   const dt = new Date(shot.ts);
   return [
     shot.ts, dt.toLocaleDateString(), dt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-    S.settings.barista || "", "espresso",
+    S.settings.barista || "", mode,
     (byId(S.machines, ses.machineId) || {}).name || "",
     (byId(S.grinders, ses.grinderId) || {}).name || "",
     bean.name || "", bean.roaster || "", bean.roastDate || "",
     bean.roastDate ? daysOff(bean.roastDate) : "",
     ses.waterTemp ?? "", ses.pressure ?? "",
-    shot.grind, shot.dose, shot.yield, shot.ratio ?? "", shot.time ?? "",
-    shot.verdict || "", shot.rating || "", shot.notes || "",
+    shot.grind ?? "", shot.dose, shot.yield, shot.ratio ?? "", shot.time ?? "",
+    shot.infusion ?? "",
+    shot.verdict ? (MODES[mode].sheet[shot.verdict] || shot.verdict) : "", shot.rating || "", shot.notes || "",
     ses.id || "", shot.id,
   ];
+}
+
+/* ---------- shot pull-sync: everyone's shots into History ---------- */
+const num = v => { const n = parseFloat(v); return isNaN(n) ? null : n; };
+let shotsPulling = false;
+async function shotsPull(){
+  const url = S.settings.scriptUrl;
+  if (!url || !navigator.onLine || shotsPulling) return;
+  shotsPulling = true;
+  try {
+    const since = Math.max(0, (S.lastShotPull || 0) - 86400000); // day of overlap; shot_id de-dupes
+    const res = await fetch(url, { method: "POST", body: JSON.stringify({ token: "botany", action: "shots_pull", since }) });
+    const j = await res.json();
+    if (j && j.ok && Array.isArray(j.rows)){
+      let changed = false, maxTs = S.lastShotPull || 0;
+      j.rows.forEach(r => {
+        const t = new Date(r[0]).getTime() || 0;
+        if (t > maxTs) maxTs = t;
+        const shotId = String(r[23] || "");
+        if (!shotId || byId(S.shots, shotId)) return;         // own or already-pulled shot
+        const sid = String(r[22] || "remote-" + shotId);
+        if (!byId(S.sessions, sid)){
+          S.sessions.push({
+            id: sid, ts: String(r[0]), remote: true, mode: String(r[4] || "espresso"),
+            machineName: String(r[5] || ""), grinderName: String(r[6] || ""),
+            beanName: String(r[7] || ""), roaster: String(r[8] || ""), roastDate: String(r[9] || ""),
+            barista: String(r[3] || ""), waterTemp: num(r[11]), pressure: num(r[12]),
+          });
+        }
+        S.shots.push({
+          id: shotId, sessionId: sid, ts: String(r[0]), remote: true,
+          grind: num(r[13]), dose: num(r[14]), yield: num(r[15]),
+          ratio: num(r[16]), time: num(r[17]), infusion: num(r[18]),
+          verdict: String(r[19] || "") || null, rating: num(r[20]) || 0,
+          notes: String(r[21] || ""), starred: false,
+        });
+        changed = true;
+      });
+      if (maxTs > (S.lastShotPull || 0)){ S.lastShotPull = maxTs; changed = true; }
+      if (changed){
+        save();
+        if ($("#view-history").classList.contains("active")) renderHistory();
+      }
+    }
+  } catch(e){ console.warn("shots pull failed", e); }
+  shotsPulling = false;
 }
 
 let flushing = false;
@@ -369,9 +468,9 @@ async function testSync(){
 
 /* ---------- CSV export ---------- */
 function exportCsv(){
-  const head = ["timestamp","date","time","barista","mode","machine","grinder","bean","roaster","roast_date","days_off_roast","water_temp_c","pressure_bar","grind","dose_g","yield_g","ratio","time_s","verdict","rating","notes","session_id","shot_id"];
+  const head = ["timestamp","date","time","barista","mode","machine","grinder","bean","roaster","roast_date","days_off_roast","water_temp_c","pressure_bar","grind","dose_g","yield_g","ratio","time_s","infusion","verdict","rating","notes","session_id","shot_id"];
   const esc = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
-  const csv = [head.join(","), ...S.shots.map(s => shotRow(s).map(esc).join(","))].join("\n");
+  const csv = [head.join(","), ...S.shots.filter(s => !s.remote).map(s => shotRow(s).map(esc).join(","))].join("\n");
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
   a.download = `botany-shots-${new Date().toISOString().slice(0, 10)}.csv`;
@@ -451,17 +550,22 @@ function dedupeLibrary(){
    ============================================================ */
 /* --- session dial-in chart (Phase 3): two single-series panels,
        shared x = shot number; no dual axis --- */
-function sessionChartHtml(shotsAsc){
+function sessionChartHtml(shotsAsc, mode){
   const n = shotsAsc.length;
   if (n < 3) return "";
   const W = 320, padL = 12, padR = 40, panelH = 64, gap = 26, padT = 16;
   const H = padT + panelH * 2 + gap + 16;
   const plotW = W - padL - padR;
   const x = i => padL + i * plotW / (n - 1);
-  const panels = [
-    { key: "grind", color: "#E7CD93", label: "GRIND",    fmt: v => fmt(v, stepDecimals()) },
-    { key: "time",  color: "#7FB08A", label: "TIME · S", fmt: v => fmt(v, 1) },
-  ];
+  const panels = mode === "tea"
+    ? [
+        { key: "time",   color: "#E7CD93", label: "STEEP · S", fmt: v => fmt(v, 1) },
+        { key: "rating", color: "#7FB08A", label: "RATING",    fmt: v => fmt(v, 0) },
+      ]
+    : [
+        { key: "grind", color: "#E7CD93", label: "GRIND",    fmt: v => fmt(v, stepDecimals()) },
+        { key: "time",  color: "#7FB08A", label: "TIME · S", fmt: v => fmt(v, 1) },
+      ];
   const out = [];
   panels.forEach((p, pi) => {
     const top = padT + pi * (panelH + gap);
@@ -495,10 +599,18 @@ function sessionChartHtml(shotsAsc){
     <div class="ch-readout">${chReadout(def, shotsAsc)}</div>
   </div>`;
 }
+function displayVerdict(shot){ return shot.remote ? shot.verdict : (shot.verdict ? verdictText(shot) : null); }
+function vClass(word){
+  if (word === "sour" || word === "weak") return "sour";
+  if (word === "bitter" || word === "tannic") return "bitter";
+  return "balanced";
+}
 function chReadout(s, shotsAsc){
   const idx = shotsAsc.indexOf(s) + 1;
-  return `Shot ${idx} · grind ${fmt(s.grind, stepDecimals())} · ${s.time != null ? fmt(s.time) + "s" : "–"} · 1:${s.ratio ?? "–"}` +
-    (s.verdict ? ` · ${s.verdict}` : "") + (s.rating ? ` · ${"●".repeat(s.rating)}` : "") + (s.starred ? " · starred" : "");
+  const lead = s.grind != null ? `grind ${fmt(s.grind, stepDecimals())}` : `steep ${s.infusion || 1}`;
+  const v = displayVerdict(s);
+  return `Shot ${idx} · ${lead} · ${s.time != null ? fmt(s.time) + "s" : "–"} · 1:${s.ratio ?? "–"}` +
+    (v ? ` · ${v}` : "") + (s.rating ? ` · ${"●".repeat(s.rating)}` : "") + (s.starred ? " · starred" : "");
 }
 function renderHistory(){
   const wrap = $("#history-list");
@@ -506,30 +618,37 @@ function renderHistory(){
     wrap.innerHTML = `<div class="empty-note">No shots yet.<br>Your dial-in story will unfold here.</div>`;
     return;
   }
-  const sessions = [...S.sessions].reverse();
+  const sessions = [...S.sessions].sort((a, b) => new Date(b.ts) - new Date(a.ts));
   wrap.innerHTML = sessions.map(ses => {
     const shots = sessionShots(ses.id); if (!shots.length && ses.id !== S.activeSessionId) return "";
-    const bean = byId(S.beans, ses.beanId) || {}, gr = byId(S.grinders, ses.grinderId) || {}, ma = byId(S.machines, ses.machineId) || {};
+    const mode = sessionMode(ses);
+    const beanName = ses.remote ? ses.beanName : (byId(S.beans, ses.beanId) || {}).name;
+    const gearBits = ses.remote
+      ? [ses.grinderName, ses.machineName, ses.barista ? "☺ " + ses.barista : null]
+      : [(byId(S.grinders, ses.grinderId) || {}).name, (byId(S.machines, ses.machineId) || {}).name];
     const d = new Date(ses.ts);
-    const chart = sessionChartHtml(shots);
-    const rows = [...shots].reverse().map(s => `
+    const chart = sessionChartHtml(shots, mode);
+    const modeTag = mode !== "espresso" ? `<span class="mode-tag">${MODES[mode].name}</span>` : "";
+    const rows = [...shots].reverse().map(s => {
+      const v = displayVerdict(s);
+      return `
       <div class="shot-row">
-        <div class="shot-grind">${fmt(s.grind, 2).replace(/\.?0+$/, m => m.includes(".") ? "" : m) || s.grind}</div>
+        <div class="shot-grind">${s.grind != null ? fmt(s.grind, 2).replace(/\.?0+$/, m => m.includes(".") ? "" : m) || s.grind : "№" + (s.infusion || 1)}</div>
         <div class="shot-mid">
-          ${fmt(s.dose)}g → ${fmt(s.yield)}g &nbsp;(1:${s.ratio ?? "–"}) &nbsp;·&nbsp; ${s.time != null ? fmt(s.time) + "s" : "–"}
-          ${s.verdict ? ` &nbsp;<span class="v-${s.verdict}">${s.verdict}</span>` : ""}
+          ${fmt(s.dose)}g → ${fmt(s.yield)}${mode === "tea" ? "ml" : "g"} &nbsp;(1:${s.ratio ?? "–"}) &nbsp;·&nbsp; ${s.time != null ? fmt(s.time) + "s" : "–"}
+          ${v ? ` &nbsp;<span class="v-${vClass(v)}">${v}</span>` : ""}
         </div>
         <div class="shot-stars">${"●".repeat(s.rating || 0)}</div>
         <button class="star-btn ${s.starred ? "on" : ""}" data-star="${s.id}" title="Star as recipe" aria-label="Star as recipe"><svg viewBox="0 0 24 24"><path d="M12 3.6l2.5 5.4 5.9.6-4.4 4 1.2 5.8L12 16.5l-5.2 2.9 1.2-5.8-4.4-4 5.9-.6z" fill="${s.starred ? "currentColor" : "none"}" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></button>
         ${s.notes ? `<div class="shot-note">${escapeHtml(s.notes)}</div>` : ""}
-      </div>`).join("");
+      </div>`; }).join("");
     return `
       <div class="h-session">
         <div class="h-session-head">
-          <span class="hb">${escapeHtml(bean.name || "Session")}</span>
+          <span class="hb">${modeTag}${escapeHtml(beanName || "Session")}</span>
           <span class="hd">${d.toLocaleDateString([], { month: "short", day: "numeric" })} · ${shots.length} shots</span>
         </div>
-        <div class="h-gear">${escapeHtml([gr.name, ma.name].filter(Boolean).join(" · "))}</div>
+        <div class="h-gear">${escapeHtml(gearBits.filter(Boolean).join(" · "))}</div>
         ${chart}
         ${rows}
       </div>`;
@@ -627,8 +746,15 @@ function handleItemClose(){
    SESSION dialog
    ============================================================ */
 let sessionDlgOpen = false;
+let dlgMode = "espresso";
+function setDlgMode(m){
+  dlgMode = m;
+  $$("#mode-seg button").forEach(b => b.classList.toggle("on", b.dataset.m === m));
+  $("#lbl-bean").firstChild.textContent = m === "espresso" ? "Bean" : "Tea / leaf";
+}
 function populateSessionSelects(){
-  const last = activeSession() || S.sessions[S.sessions.length - 1] || {};
+  const last = activeSession() || [...S.sessions].reverse().find(s => !s.remote) || {};
+  setDlgMode(sessionMode(last));
   const build = (arr, sel) => {
     const hasSel = arr.some(x => x.id === sel);
     return (hasSel ? "" : `<option value="" disabled selected hidden>Choose…</option>`)
@@ -675,9 +801,9 @@ function handleSessionClose(){
   const p = parseFloat($("#in-pressure").value.replace(",", "."));
   const pressure = isNaN(p) ? null : p;
   const ses = activeSession();
-  if (ses){ Object.assign(ses, { beanId, grinderId, machineId, waterTemp, pressure }); }
+  if (ses){ Object.assign(ses, { beanId, grinderId, machineId, waterTemp, pressure, mode: dlgMode }); }
   else {
-    const s = { id: uid(), ts: new Date().toISOString(), beanId, grinderId, machineId, waterTemp, pressure };
+    const s = { id: uid(), ts: new Date().toISOString(), beanId, grinderId, machineId, waterTemp, pressure, mode: dlgMode };
     S.sessions.push(s); S.activeSessionId = s.id;
   }
   save(); prefillDraft(); renderDial();
@@ -721,9 +847,18 @@ function init(){
   $("#dlg-item").addEventListener("close", handleItemClose);
   $$("[data-add]").forEach(b => b.addEventListener("click", () => openItemDialog(b.dataset.add, null)));
 
+  $$("#mode-seg button").forEach(b => b.addEventListener("click", () => setDlgMode(b.dataset.m)));
+
   bindDial();
   bindHoldButton("#grind-minus", () => setGrind(draft.grind - grinderStep()));
   bindHoldButton("#grind-plus", () => setGrind(draft.grind + grinderStep()));
+  bindHoldButton("#inf-minus", () => { draft.infusion = Math.max(1, (draft.infusion || 1) - 1); $("#in-infusion").value = draft.infusion; });
+  bindHoldButton("#inf-plus",  () => { draft.infusion = (draft.infusion || 1) + 1; $("#in-infusion").value = draft.infusion; });
+  $("#in-infusion").addEventListener("change", () => {
+    const v = parseInt($("#in-infusion").value, 10);
+    draft.infusion = isNaN(v) || v < 1 ? 1 : v;
+    $("#in-infusion").value = draft.infusion;
+  });
   $("#in-grind").addEventListener("change", () => {
     const v = parseFloat($("#in-grind").value.replace(",", "."));
     setGrind(isNaN(v) ? draft.grind : v);
@@ -760,7 +895,7 @@ function init(){
   });
   $("#btn-sync-now").addEventListener("click", async () => {
     toast("Syncing…");
-    await Promise.all([flushQueue(), libSync()]);
+    await Promise.all([flushQueue(), libSync(), shotsPull()]);
     if ($("#view-library").classList.contains("active")) renderLibrary();
     show("settings");
     toast("Synced");
@@ -768,19 +903,21 @@ function init(){
   $("#btn-export").addEventListener("click", exportCsv);
   $("#sync-chip").addEventListener("click", () => show("settings"));
 
-  window.addEventListener("online", () => { flushQueue(); libSync(); });
+  window.addEventListener("online", () => { flushQueue(); libSync(); shotsPull(); });
   // PWAs resumed from the switcher don't relaunch — sync whenever we come back to the foreground
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible"){ flushQueue(); libSync(); }
+    if (document.visibilityState === "visible"){ flushQueue(); libSync(); shotsPull(); }
   });
   setInterval(flushQueue, 30000);
   setInterval(libSync, 120000);
+  setInterval(shotsPull, 120000);
 
   if (dedupeLibrary()) save();
   if (activeSession()) prefillDraft();
   renderDial(); renderSyncChip();
   flushQueue();
   libSync();
+  shotsPull();
 
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
 }

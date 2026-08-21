@@ -52,7 +52,7 @@
       </button>
 
       <!-- GRIND — the hero: rotary collar dial -->
-      <div class="card grind-card">
+      <div class="card grind-card" id="grind-card">
         <div class="card-label">Grind <span id="grind-unit" class="unit"></span></div>
         <div class="dial-wrap" id="dial-wrap">
           <div class="dial-square" id="dial-square">
@@ -75,7 +75,7 @@
       <!-- DOSE / YIELD -->
       <div class="duo">
         <div class="card mini-card">
-          <div class="card-label">Dose <span class="unit">g in</span></div>
+          <div class="card-label" id="dose-label">Dose <span class="unit">g in</span></div>
           <div class="mini-row">
             <button class="step-btn" id="dose-minus">−</button>
             <input class="mini-value" id="in-dose" type="text" inputmode="decimal">
@@ -83,12 +83,22 @@
           </div>
         </div>
         <div class="card mini-card">
-          <div class="card-label">Yield <span class="unit">g out</span></div>
+          <div class="card-label" id="yield-label">Yield <span class="unit">g out</span></div>
           <div class="mini-row">
             <button class="step-btn" id="yield-minus">−</button>
             <input class="mini-value" id="in-yield" type="text" inputmode="decimal">
             <button class="step-btn" id="yield-plus">+</button>
           </div>
+        </div>
+      </div>
+
+      <!-- INFUSION (tea only) -->
+      <div class="card mini-card infusion-card hidden" id="infusion-card">
+        <div class="card-label">Infusion <span class="unit">steep №</span></div>
+        <div class="mini-row">
+          <button class="step-btn" id="inf-minus">−</button>
+          <input class="mini-value" id="in-infusion" type="text" inputmode="numeric">
+          <button class="step-btn" id="inf-plus">+</button>
         </div>
       </div>
 
@@ -178,7 +188,12 @@
 <dialog id="dlg-session">
   <form method="dialog" class="dlg">
     <h2 id="dlg-session-title">New session</h2>
-    <label>Bean<select id="sel-bean"></select></label>
+    <div class="mode-seg" id="mode-seg">
+      <button type="button" data-m="espresso" class="on">Espresso</button>
+      <button type="button" data-m="teapresso">Teapresso</button>
+      <button type="button" data-m="tea">Tea</button>
+    </div>
+    <label id="lbl-bean">Bean<select id="sel-bean"></select></label>
     <label>Grinder<select id="sel-grinder"></select></label>
     <label>Machine<select id="sel-machine"></select></label>
     <div class="dlg-duo">

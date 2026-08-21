@@ -404,6 +404,28 @@ dialog::backdrop{ background:rgba(5,12,8,.7); backdrop-filter:blur(3px); }
 }
 .dlg select:focus, .dlg input:focus{ border-color:var(--brass); }
 .dlg-duo{ display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:12px; }
+.mode-seg{
+  display:grid; grid-template-columns:repeat(3,1fr); gap:2px;
+  border:1px solid var(--line); border-radius:12px; overflow:hidden;
+  margin-bottom:18px;
+}
+.mode-seg button{
+  padding:11px 4px; background:rgba(14,31,23,.5);
+  font-size:13px; font-weight:600; color:var(--sage);
+  transition:background .15s, color .15s;
+}
+.mode-seg button.on{
+  background:linear-gradient(160deg, var(--brass-hi), var(--brass));
+  color:#182015; font-weight:700;
+}
+.infusion-card{ margin-bottom:14px; }
+.infusion-card .mini-value{ font-size:26px; }
+.mode-tag{
+  font-size:10px; letter-spacing:1.6px; text-transform:uppercase; color:#182015;
+  background:linear-gradient(160deg, var(--brass-hi), var(--brass));
+  border-radius:6px; padding:2px 7px; margin-right:8px; font-weight:700;
+  vertical-align:2px; display:inline-block;
+}
 .dlg-recipe{
   border:1px dashed var(--brass); border-radius:12px; padding:11px 14px; margin-bottom:14px;
   font-size:13px; color:var(--brass-hi); font-family:var(--mono);

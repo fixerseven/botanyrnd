@@ -13,7 +13,7 @@ const TOKEN = "botany"; // must match the app; change in both places if you want
 const HEADERS = [
   "timestamp","date","time","barista","mode","machine","grinder","bean","roaster",
   "roast_date","days_off_roast","water_temp_c","pressure_bar","grind","dose_g","yield_g",
-  "ratio","time_s","verdict","rating","notes","session_id","shot_id"
+  "ratio","time_s","infusion","verdict","rating","notes","session_id","shot_id"
 ];
 
 function ss_() { return SpreadsheetApp.openById(SPREADSHEET_ID); }
@@ -29,7 +29,35 @@ function getSheet_() {
     // schema widened in a newer app version — refresh the header row
     sh.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]).setFontWeight("bold");
   }
+  migrateRows_(sh);
   return sh;
+}
+
+/* Rows written by older app versions are narrower than the current header —
+   realign them once so every column matches. shot_id is always the last cell. */
+function migrateRows_(sh) {
+  var lastRow = sh.getLastRow();
+  if (lastRow < 2) return;
+  var n = HEADERS.length;
+  var rng = sh.getRange(2, 1, lastRow - 1, n);
+  var vals = rng.getValues();
+  var dirty = false;
+  var fixed = vals.map(function (r) {
+    if (String(r[n - 1]) !== "") return r;                       // already current shape
+    if (String(r[n - 2]) !== "") {                                // pre-infusion era (23 cols)
+      dirty = true;
+      var a = r.slice(0, n - 1);
+      return a.slice(0, 18).concat([""], a.slice(18));
+    }
+    if (String(r[n - 3]) !== "") {                                // pre-pressure era (22 cols)
+      dirty = true;
+      var b = r.slice(0, n - 2);
+      b = b.slice(0, 12).concat([""], b.slice(12));
+      return b.slice(0, 18).concat([""], b.slice(18));
+    }
+    return r;
+  });
+  if (dirty) rng.setValues(fixed);
 }
 
 /* ---------- shared library (beans / grinders / machines) ---------- */
@@ -105,13 +133,30 @@ function doPost(e) {
       return out({ ok: true, items: libAll_() });
     }
 
+    // shot pull-sync: return rows newer than `since` so phones can show everyone's history
+    if (body.action === "shots_pull") {
+      const sh = getSheet_();
+      const lastRow = sh.getLastRow();
+      if (lastRow < 2) return out({ ok: true, rows: [] });
+      const vals = sh.getRange(2, 1, lastRow - 1, HEADERS.length).getValues();
+      const since = Number(body.since) || 0;
+      const rows = [];
+      for (var i = vals.length - 1; i >= 0 && rows.length < 500; i--) {
+        const ts = new Date(vals[i][0]).getTime() || 0;
+        if (ts > since) rows.push(vals[i]);
+      }
+      return out({ ok: true, rows: rows });
+    }
+
     let rows = body.rows || [];
     if (!rows.length) return out({ ok: true, appended: 0 });
 
-    // legacy app versions send rows without pressure_bar (col 13) — pad them
-    rows = rows.map(r =>
-      r.length === HEADERS.length - 1 ? r.slice(0, 12).concat([""], r.slice(12)) : r
-    );
+    // legacy app versions — pad older row shapes up to the current schema
+    rows = rows.map(function (r) {
+      if (r.length === HEADERS.length - 2) r = r.slice(0, 12).concat([""], r.slice(12)); // pre-pressure era
+      if (r.length === HEADERS.length - 1) r = r.slice(0, 18).concat([""], r.slice(18)); // pre-infusion era
+      return r;
+    });
 
     const sh = getSheet_();
 
@@ -134,6 +179,6 @@ function doPost(e) {
 
 function doGet() {
   return ContentService.createTextOutput(
-    JSON.stringify({ ok: true, service: "botany-lab", version: 2, sheet: SHEET_NAME })
+    JSON.stringify({ ok: true, service: "botany-lab", version: 4, sheet: SHEET_NAME })
   ).setMimeType(ContentService.MimeType.JSON);
 }
