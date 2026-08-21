@@ -28,10 +28,10 @@ It runs full-screen and works offline; shots queue and sync when back online.
 
 ## 3 · Deploy updates
 
-The app is static files on the `main` branch, served by GitHub Pages:
+The app lives at https://fixerseven.github.io/botanyrnd/ — GitHub Pages serves the `gh-pages` branch:
 
 ```bash
-git add -A && git commit -m "update" && git push
+git add -A && git commit -m "update" && git push && git push origin main:gh-pages
 ```
 
 Pages redeploys automatically in ~1 minute. Phones pick up the new version on next launch (the service worker refreshes in the background; force-quit and reopen to be sure).
