@@ -28,8 +28,10 @@ self.addEventListener("fetch", e => {
     })));
     return;
   }
+  // bypass the HTTP cache (GH Pages max-age=600) so deploys land immediately;
+  // offline falls back to the sw cache
   e.respondWith(
-    fetch(e.request).then(res => {
+    fetch(e.request, { cache: "no-store" }).then(res => {
       if (res.ok) caches.open(CACHE).then(c => c.put(e.request, res.clone()));
       return res;
     }).catch(() => caches.match(e.request).then(hit => hit || caches.match("index.html")))
