@@ -4,19 +4,28 @@
 "use strict";
 
 const LS_KEY = "botany-lab-v1";
+// Shared sync endpoint (Apps Script "Botany Lab Sync" → Botany R&D — Shot Log sheet)
+const DEFAULT_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzxgJjTni9Pdk_3lREr5Kiz73-1LOxgSu9DzTe03PZB3bPMOPKys9HwQ1LevqqnpXLD/exec";
 
 /* ---------- state ---------- */
 const defaults = () => ({
   machines: [], grinders: [], beans: [],
   sessions: [], shots: [],
   queue: [],                       // shot ids not yet synced
-  settings: { scriptUrl: "", barista: "" },
+  settings: { scriptUrl: DEFAULT_SCRIPT_URL, barista: "" },
   activeSessionId: null,
 });
 
 let S = load();
 function load(){
-  try { const raw = localStorage.getItem(LS_KEY); if (raw) return Object.assign(defaults(), JSON.parse(raw)); }
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (raw){
+      const s = Object.assign(defaults(), JSON.parse(raw));
+      if (!s.settings.scriptUrl) s.settings.scriptUrl = DEFAULT_SCRIPT_URL;
+      return s;
+    }
+  }
   catch(e){ console.warn("load failed", e); }
   return defaults();
 }

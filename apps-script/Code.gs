@@ -1,10 +1,11 @@
 /**
  * BOTANY R&D LAB — Google Sheets sync endpoint
- * Paste this into Extensions → Apps Script of the "Botany R&D — Shot Log" spreadsheet,
- * then Deploy → New deployment → Web app → Execute as: Me, Access: Anyone.
+ * Paste into a new Apps Script project (script.new), then
+ * Deploy → New deployment → Web app → Execute as: Me, Access: Anyone.
  * Copy the /exec URL into the app's Settings → Google Sheet sync URL.
  */
 
+const SPREADSHEET_ID = "1y8vjG8UYb2xlQ6WmzVQVdlhE17YeQny8EkXAVM33aOE"; // Botany R&D — Shot Log
 const SHEET_NAME = "Shots";
 const TOKEN = "botany"; // must match the app; change in both places if you want
 
@@ -15,7 +16,7 @@ const HEADERS = [
 ];
 
 function getSheet_() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   let sh = ss.getSheetByName(SHEET_NAME);
   if (!sh) sh = ss.insertSheet(SHEET_NAME);
   if (sh.getLastRow() === 0) {
