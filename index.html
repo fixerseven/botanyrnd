@@ -16,7 +16,7 @@
 <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400..700;1,400..700&family=Instrument+Sans:wght@400;500;600;700&family=Spline+Sans+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/app.css">
 </head>
-<body>
+<body data-app-version="1.7.0">
 
 <header class="topbar">
   <div class="wordmark">
@@ -173,7 +173,7 @@
       </div>
       <div class="set-status" id="data-count"></div>
     </div>
-    <p class="colophon">Botany R&amp;D Lab · espresso first, teapresso next</p>
+    <p class="colophon">Botany R&amp;D Lab · <span id="app-version"></span> · coffee &amp; tea, dialed in</p>
   </section>
 </main>
 
@@ -198,8 +198,8 @@
     <label id="lbl-grinder">Grinder<select id="sel-grinder"></select></label>
     <label>Machine<select id="sel-machine"></select></label>
     <div class="dlg-duo">
-      <label>Water temp °C <span class="unit">optional</span><input id="in-temp" type="text" inputmode="decimal" placeholder="93" autocomplete="off"></label>
-      <label>Pressure bar <span class="unit">optional</span><input id="in-pressure" type="text" inputmode="decimal" placeholder="9" autocomplete="off"></label>
+      <label>Water °C<input id="in-temp" type="text" inputmode="decimal" placeholder="93" autocomplete="off"></label>
+      <label>Pressure bar<input id="in-pressure" type="text" inputmode="decimal" placeholder="9" autocomplete="off"></label>
     </div>
     <div class="dlg-recipe hidden" id="dlg-recipe"></div>
     <div class="dlg-actions">

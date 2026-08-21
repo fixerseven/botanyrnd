@@ -4,6 +4,7 @@
 "use strict";
 
 const LS_KEY = "botany-lab-v1";
+const APP_VERSION = "1.7.0";   // bump together with <body data-app-version> on every release
 // Shared sync endpoint (Apps Script "Botany Lab Sync" → Botany R&D — Shot Log sheet)
 const DEFAULT_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzxgJjTni9Pdk_3lREr5Kiz73-1LOxgSu9DzTe03PZB3bPMOPKys9HwQ1LevqqnpXLD/exec";
 
@@ -777,7 +778,7 @@ function setDlgMode(m){
   dlgMode = m;
   $$("#mode-seg button").forEach(b => b.classList.toggle("on", b.dataset.m === m));
   $("#lbl-bean").firstChild.textContent = m === "espresso" ? "Bean" : "Tea / leaf";
-  $("#lbl-grinder").classList.toggle("hidden", m === "tea");
+  $("#lbl-grinder")?.classList.toggle("hidden", m === "tea");
   fillBeanSelect($("#sel-bean").value);
 }
 function populateSessionSelects(keepMode){
@@ -856,13 +857,25 @@ function show(view){
   if (view === "settings"){
     $("#set-barista").value = S.settings.barista;
     $("#set-url").value = S.settings.scriptUrl;
-    $("#data-count").textContent = `${S.shots.length} shots · ${S.sessions.length} sessions on this phone · shared library: ${alive(S.beans).length} beans, ${alive(S.grinders).length} grinders, ${alive(S.machines).length} machines.`;
+    $("#data-count").textContent = `v${APP_VERSION} · ${S.shots.length} shots · ${S.sessions.length} sessions on this phone · shared library: ${alive(S.beans).length} beans, ${alive(S.teas).length} teas, ${alive(S.grinders).length} grinders, ${alive(S.machines).length} machines.`;
     renderSyncChip();
   }
   window.scrollTo({ top: 0 });
 }
 
 function init(){
+  // deploy-skew guard: CDN can serve mismatched index.html / app.js for a few
+  // minutes after a release — one forced reload realigns them
+  const htmlVersion = document.body.dataset.appVersion || "";
+  if (htmlVersion !== APP_VERSION && !sessionStorage.getItem("skew-reload")){
+    sessionStorage.setItem("skew-reload", "1");
+    location.reload();
+    return;
+  }
+  sessionStorage.removeItem("skew-reload");
+  const verEl = $("#app-version");
+  if (verEl) verEl.textContent = "v" + APP_VERSION;
+
   $$(".tab").forEach(t => t.addEventListener("click", () => show(t.dataset.view)));
   $("#btn-start-session").addEventListener("click", openSessionDialog);
   $("#session-bar").addEventListener("click", openSessionDialog);
