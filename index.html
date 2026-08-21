@@ -181,7 +181,10 @@
     <label>Bean<select id="sel-bean"></select></label>
     <label>Grinder<select id="sel-grinder"></select></label>
     <label>Machine<select id="sel-machine"></select></label>
-    <label>Water temp °C <span class="unit">optional</span><input id="in-temp" type="text" inputmode="decimal" placeholder="93" autocomplete="off"></label>
+    <div class="dlg-duo">
+      <label>Water temp °C <span class="unit">optional</span><input id="in-temp" type="text" inputmode="decimal" placeholder="93" autocomplete="off"></label>
+      <label>Pressure bar <span class="unit">optional</span><input id="in-pressure" type="text" inputmode="decimal" placeholder="9" autocomplete="off"></label>
+    </div>
     <div class="dlg-recipe hidden" id="dlg-recipe"></div>
     <div class="dlg-actions">
       <button value="cancel" class="btn-ghost">Cancel</button>

@@ -166,7 +166,7 @@ function renderDial(){
   $("#sb-bean").textContent = bean ? bean.name : "—";
   const d = bean ? daysOff(bean.roastDate) : null;
   $("#sb-roast").textContent = d != null ? `${d}d off roast` : "";
-  $("#sb-gear").textContent = [gr?.name, ma?.name, ses.waterTemp ? ses.waterTemp + "°C" : null].filter(Boolean).join("  ·  ");
+  $("#sb-gear").textContent = [gr?.name, ma?.name, ses.waterTemp ? ses.waterTemp + "°C" : null, ses.pressure ? ses.pressure + " bar" : null].filter(Boolean).join("  ·  ");
   const n = sessionShots(ses.id).length;
   $("#sb-count").textContent = `${n} shot${n === 1 ? "" : "s"}`;
 
@@ -310,7 +310,7 @@ function shotRow(shot){
     (byId(S.grinders, ses.grinderId) || {}).name || "",
     bean.name || "", bean.roaster || "", bean.roastDate || "",
     bean.roastDate ? daysOff(bean.roastDate) : "",
-    ses.waterTemp ?? "",
+    ses.waterTemp ?? "", ses.pressure ?? "",
     shot.grind, shot.dose, shot.yield, shot.ratio ?? "", shot.time ?? "",
     shot.verdict || "", shot.rating || "", shot.notes || "",
     ses.id || "", shot.id,
@@ -369,7 +369,7 @@ async function testSync(){
 
 /* ---------- CSV export ---------- */
 function exportCsv(){
-  const head = ["timestamp","date","time","barista","mode","machine","grinder","bean","roaster","roast_date","days_off_roast","water_temp_c","grind","dose_g","yield_g","ratio","time_s","verdict","rating","notes","session_id","shot_id"];
+  const head = ["timestamp","date","time","barista","mode","machine","grinder","bean","roaster","roast_date","days_off_roast","water_temp_c","pressure_bar","grind","dose_g","yield_g","ratio","time_s","verdict","rating","notes","session_id","shot_id"];
   const esc = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
   const csv = [head.join(","), ...S.shots.map(s => shotRow(s).map(esc).join(","))].join("\n");
   const a = document.createElement("a");
@@ -379,8 +379,97 @@ function exportCsv(){
 }
 
 /* ============================================================
+   SHARED LIBRARY SYNC (Phase 4) — push+pull merge via lib_sync
+   ============================================================ */
+const KIND_COLL = { bean: "beans", grinder: "grinders", machine: "machines" };
+let libSyncing = false;
+async function libSync(){
+  const url = S.settings.scriptUrl;
+  if (!url || !navigator.onLine || libSyncing) return;
+  libSyncing = true;
+  try {
+    const items = [];
+    Object.entries(KIND_COLL).forEach(([kind, coll]) =>
+      S[coll].forEach(x => items.push(Object.assign({}, x, { _kind: kind, _updated: x.updatedAt || 0 }))));
+    const res = await fetch(url, { method: "POST", body: JSON.stringify({ token: "botany", action: "lib_sync", items }) });
+    const j = await res.json();
+    if (j && j.ok && Array.isArray(j.items)) libMerge(j.items);
+  } catch(e){ console.warn("library sync failed", e); }
+  libSyncing = false;
+}
+function libMerge(items){
+  let changed = false;
+  items.forEach(it => {
+    const coll = S[KIND_COLL[it._kind]];
+    if (!coll || !it.id) return;
+    const upd = Number(it._updated) || 0;
+    const data = Object.assign({}, it); delete data._kind; delete data._updated;
+    const local = byId(coll, it.id);
+    if (!local){ data.updatedAt = upd; coll.push(data); changed = true; }
+    else if (upd > (local.updatedAt || 0)){ Object.assign(local, data, { updatedAt: upd }); changed = true; }
+  });
+  if (changed){
+    save();
+    if ($("#view-library").classList.contains("active")) renderLibrary();
+    renderDial();
+  }
+}
+const alive = coll => coll.filter(x => !x.deleted);
+
+/* ============================================================
    HISTORY
    ============================================================ */
+/* --- session dial-in chart (Phase 3): two single-series panels,
+       shared x = shot number; no dual axis --- */
+function sessionChartHtml(shotsAsc){
+  const n = shotsAsc.length;
+  if (n < 3) return "";
+  const W = 320, padL = 12, padR = 40, panelH = 64, gap = 26, padT = 16;
+  const H = padT + panelH * 2 + gap + 16;
+  const plotW = W - padL - padR;
+  const x = i => padL + i * plotW / (n - 1);
+  const panels = [
+    { key: "grind", color: "#E7CD93", label: "GRIND",    fmt: v => fmt(v, stepDecimals()) },
+    { key: "time",  color: "#7FB08A", label: "TIME · S", fmt: v => fmt(v, 1) },
+  ];
+  const out = [];
+  panels.forEach((p, pi) => {
+    const top = padT + pi * (panelH + gap);
+    const nums = shotsAsc.map(s => s[p.key]).filter(v => v != null && !isNaN(v));
+    if (!nums.length) return;
+    let mn = Math.min(...nums), mx = Math.max(...nums);
+    if (mx - mn < 1e-9){ mn -= 1; mx += 1; }
+    const span = mx - mn; mn -= span * 0.18; mx += span * 0.18;
+    const y = v => top + panelH - ((v - mn) / (mx - mn)) * panelH;
+    out.push(`<text x="${padL}" y="${top - 6}" class="ch-lab">${p.label}</text>`);
+    out.push(`<line x1="${padL}" y1="${(top + panelH + 0.5).toFixed(1)}" x2="${W - padR}" y2="${(top + panelH + 0.5).toFixed(1)}" stroke="#2A4433" stroke-width="1"/>`);
+    const pts = shotsAsc.map((s, i) => s[p.key] != null && !isNaN(s[p.key]) ? `${x(i).toFixed(1)},${y(s[p.key]).toFixed(1)}` : null).filter(Boolean);
+    if (pts.length > 1) out.push(`<polyline points="${pts.join(" ")}" fill="none" stroke="${p.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`);
+    let lastPt = null;
+    shotsAsc.forEach((s, i) => {
+      const v = s[p.key];
+      if (v == null || isNaN(v)) return;
+      const cx = x(i).toFixed(1), cy = y(v).toFixed(1);
+      if (s.starred) out.push(`<circle cx="${cx}" cy="${cy}" r="8" fill="none" stroke="#E7CD93" stroke-width="1.2" opacity=".9"/>`);
+      out.push(`<circle cx="${cx}" cy="${cy}" r="4" fill="${p.color}" stroke="#16291F" stroke-width="2"/>`);
+      out.push(`<circle cx="${cx}" cy="${cy}" r="13" fill="transparent" class="ch-hit" data-shot="${s.id}"/>`);
+      lastPt = [x(i), y(v), v];
+    });
+    if (lastPt) out.push(`<text x="${(lastPt[0] + 9).toFixed(1)}" y="${(lastPt[1] + 3.5).toFixed(1)}" class="ch-val" fill="${p.color}">${p.fmt(lastPt[2])}</text>`);
+  });
+  out.push(`<text x="${padL}" y="${H - 3}" class="ch-lab" opacity=".7">SHOT 1</text>`);
+  out.push(`<text x="${W - padR}" y="${H - 3}" class="ch-lab" opacity=".7" text-anchor="middle">${n}</text>`);
+  const def = shotsAsc.filter(s => s.starred).pop() || shotsAsc[n - 1];
+  return `<div class="chart-card">
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Dial-in progression: grind and extraction time per shot">${out.join("")}</svg>
+    <div class="ch-readout">${chReadout(def, shotsAsc)}</div>
+  </div>`;
+}
+function chReadout(s, shotsAsc){
+  const idx = shotsAsc.indexOf(s) + 1;
+  return `Shot ${idx} · grind ${fmt(s.grind, stepDecimals())} · ${s.time != null ? fmt(s.time) + "s" : "–"} · 1:${s.ratio ?? "–"}` +
+    (s.verdict ? ` · ${s.verdict}` : "") + (s.rating ? ` · ${"●".repeat(s.rating)}` : "") + (s.starred ? " · starred" : "");
+}
 function renderHistory(){
   const wrap = $("#history-list");
   if (!S.shots.length){
@@ -392,6 +481,7 @@ function renderHistory(){
     const shots = sessionShots(ses.id); if (!shots.length && ses.id !== S.activeSessionId) return "";
     const bean = byId(S.beans, ses.beanId) || {}, gr = byId(S.grinders, ses.grinderId) || {}, ma = byId(S.machines, ses.machineId) || {};
     const d = new Date(ses.ts);
+    const chart = sessionChartHtml(shots);
     const rows = [...shots].reverse().map(s => `
       <div class="shot-row">
         <div class="shot-grind">${fmt(s.grind, 2).replace(/\.?0+$/, m => m.includes(".") ? "" : m) || s.grind}</div>
@@ -410,9 +500,15 @@ function renderHistory(){
           <span class="hd">${d.toLocaleDateString([], { month: "short", day: "numeric" })} · ${shots.length} shots</span>
         </div>
         <div class="h-gear">${escapeHtml([gr.name, ma.name].filter(Boolean).join(" · "))}</div>
+        ${chart}
         ${rows}
       </div>`;
   }).join("");
+  $$("#history-list .ch-hit").forEach(h => h.addEventListener("click", () => {
+    const shot = byId(S.shots, h.dataset.shot); if (!shot) return;
+    const card = h.closest(".chart-card");
+    card.querySelector(".ch-readout").textContent = chReadout(shot, sessionShots(shot.sessionId));
+  }));
   $$("#history-list .star-btn").forEach(b => b.addEventListener("click", () => {
     const shot = byId(S.shots, b.dataset.star); if (!shot) return;
     shot.starred = !shot.starred; save(); renderHistory();
@@ -446,12 +542,12 @@ function renderLibrary(){
       <span><span class="li-name">${escapeHtml(x.name)}</span>${x.roaster || x.roastDate ? `<span class="li-sub">${escapeHtml(x.roaster || "")}${x.roastDate ? ` · roasted ${x.roastDate}` : ""}</span>` : ""}</span>
       <span class="li-tag">${tag}</span>
     </button>`;
-  $("#lib-beans").innerHTML = S.beans.map(b => {
+  $("#lib-beans").innerHTML = alive(S.beans).map(b => {
     const d = daysOff(b.roastDate);
     return item(b, "bean", d != null ? `${d}d` : "");
   }).join("") || `<div class="empty-note" style="padding:14px">Add your first bean.</div>`;
-  $("#lib-grinders").innerHTML = S.grinders.map(g => item(g, "grinder", `step ${g.step || 0.1}`)).join("") || `<div class="empty-note" style="padding:14px">Add a grinder.</div>`;
-  $("#lib-machines").innerHTML = S.machines.map(m => item(m, "machine", "")).join("") || `<div class="empty-note" style="padding:14px">Add a machine.</div>`;
+  $("#lib-grinders").innerHTML = alive(S.grinders).map(g => item(g, "grinder", `step ${g.step || 1}`)).join("") || `<div class="empty-note" style="padding:14px">Add a grinder.</div>`;
+  $("#lib-machines").innerHTML = alive(S.machines).map(m => item(m, "machine", "")).join("") || `<div class="empty-note" style="padding:14px">Add a machine.</div>`;
   $$("#view-library .lib-item").forEach(b => b.addEventListener("click", () => {
     const [type, id] = b.dataset.edit.split(":");
     openItemDialog(type, id);
@@ -476,15 +572,17 @@ function handleItemClose(){
   if (!itemCtx) return;
   const coll = S[collName(itemCtx.type)];
   if (val === "delete" && itemCtx.id){
-    S[collName(itemCtx.type)] = coll.filter(x => x.id !== itemCtx.id); save();
-    renderLibrary(); toast("Deleted");
+    const item = byId(coll, itemCtx.id);
+    if (item){ item.deleted = true; item.updatedAt = Date.now(); }   // soft delete so it propagates to other phones
+    save(); renderLibrary(); toast("Deleted"); libSync();
   } else if (val === "ok"){
     const data = {};
     $$("#dlg-item-fields input").forEach(i => data[i.name] = i.value.trim());
     if (!data.name){ itemCtx = null; return; }
+    data.updatedAt = Date.now();
     if (itemCtx.id) Object.assign(byId(coll, itemCtx.id), data);
     else coll.push(Object.assign({ id: uid() }, data));
-    save(); renderLibrary(); toast("Saved");
+    save(); renderLibrary(); toast("Saved"); libSync();
     if (sessionDlgOpen){ populateSessionSelects(); $("#dlg-session").showModal(); }
   }
   itemCtx = null;
@@ -502,10 +600,11 @@ function populateSessionSelects(){
       + arr.map(x => `<option value="${x.id}" ${x.id === sel ? "selected" : ""}>${escapeHtml(x.name)}</option>`).join("")
       + `<option value="__add">+ Add new…</option>`;
   };
-  $("#sel-bean").innerHTML = build(S.beans, last.beanId);
-  $("#sel-grinder").innerHTML = build(S.grinders, last.grinderId);
-  $("#sel-machine").innerHTML = build(S.machines, last.machineId);
+  $("#sel-bean").innerHTML = build(alive(S.beans), last.beanId);
+  $("#sel-grinder").innerHTML = build(alive(S.grinders), last.grinderId);
+  $("#sel-machine").innerHTML = build(alive(S.machines), last.machineId);
   $("#in-temp").value = last.waterTemp ?? "";
+  $("#in-pressure").value = last.pressure ?? "";
   updateRecipeHint();
 }
 function updateRecipeHint(){
@@ -538,10 +637,12 @@ function handleSessionClose(){
   }
   const t = parseFloat($("#in-temp").value.replace(",", "."));
   const waterTemp = isNaN(t) ? null : t;
+  const p = parseFloat($("#in-pressure").value.replace(",", "."));
+  const pressure = isNaN(p) ? null : p;
   const ses = activeSession();
-  if (ses){ Object.assign(ses, { beanId, grinderId, machineId, waterTemp }); }
+  if (ses){ Object.assign(ses, { beanId, grinderId, machineId, waterTemp, pressure }); }
   else {
-    const s = { id: uid(), ts: new Date().toISOString(), beanId, grinderId, machineId, waterTemp };
+    const s = { id: uid(), ts: new Date().toISOString(), beanId, grinderId, machineId, waterTemp, pressure };
     S.sessions.push(s); S.activeSessionId = s.id;
   }
   save(); prefillDraft(); renderDial();
@@ -615,7 +716,7 @@ function init(){
 
   /* settings */
   $("#set-barista").addEventListener("change", () => { S.settings.barista = $("#set-barista").value.trim(); save(); });
-  $("#set-url").addEventListener("change", () => { S.settings.scriptUrl = $("#set-url").value.trim(); save(); renderSyncChip(); flushQueue(); });
+  $("#set-url").addEventListener("change", () => { S.settings.scriptUrl = $("#set-url").value.trim(); save(); renderSyncChip(); flushQueue(); libSync(); });
   $("#btn-test-sync").addEventListener("click", testSync);
   $("#btn-default-url").addEventListener("click", () => {
     S.settings.scriptUrl = DEFAULT_SCRIPT_URL; save();
@@ -626,12 +727,14 @@ function init(){
   $("#btn-export").addEventListener("click", exportCsv);
   $("#sync-chip").addEventListener("click", () => show("settings"));
 
-  window.addEventListener("online", flushQueue);
+  window.addEventListener("online", () => { flushQueue(); libSync(); });
   setInterval(flushQueue, 30000);
+  setInterval(libSync, 300000);
 
   if (activeSession()) prefillDraft();
   renderDial(); renderSyncChip();
   flushQueue();
+  libSync();
 
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
 }
