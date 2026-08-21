@@ -408,13 +408,43 @@ function libMerge(items){
     if (!local){ data.updatedAt = upd; coll.push(data); changed = true; }
     else if (upd > (local.updatedAt || 0)){ Object.assign(local, data, { updatedAt: upd }); changed = true; }
   });
-  if (changed){
+  const deduped = dedupeLibrary();
+  if (changed || deduped){
     save();
     if ($("#view-library").classList.contains("active")) renderLibrary();
     renderDial();
   }
+  if (deduped) setTimeout(libSync, 1500);   // push the dedupe verdicts back to the shop
 }
 const alive = coll => coll.filter(x => !x.deleted);
+const normName = s => String(s || "").trim().toLowerCase().replace(/\s+/g, " ");
+
+/* Same-named items created independently on different phones converge to one:
+   earliest id wins (deterministic on every device), missing fields fold into the
+   winner, losers are soft-deleted, and this phone's sessions are remapped. */
+function dedupeLibrary(){
+  let changed = false;
+  const refKeys = { beans: "beanId", grinders: "grinderId", machines: "machineId" };
+  Object.entries(refKeys).forEach(([coll, refKey]) => {
+    const groups = {};
+    alive(S[coll]).forEach(x => { const k = normName(x.name); (groups[k] = groups[k] || []).push(x); });
+    Object.values(groups).forEach(g => {
+      if (g.length < 2) return;
+      g.sort((a, b) => a.id < b.id ? -1 : 1);
+      const win = g[0];
+      g.slice(1).forEach(loser => {
+        Object.keys(loser).forEach(k => {
+          if (k === "id" || k === "updatedAt" || k === "deleted") return;
+          if (loser[k] && !win[k]){ win[k] = loser[k]; win.updatedAt = Date.now(); }
+        });
+        loser.deleted = true; loser.updatedAt = Date.now();
+        S.sessions.forEach(s => { if (s[refKey] === loser.id) s[refKey] = win.id; });
+        changed = true;
+      });
+    });
+  });
+  return changed;
+}
 
 /* ============================================================
    HISTORY
@@ -581,7 +611,12 @@ function handleItemClose(){
     if (!data.name){ itemCtx = null; return; }
     data.updatedAt = Date.now();
     if (itemCtx.id) Object.assign(byId(coll, itemCtx.id), data);
-    else coll.push(Object.assign({ id: uid() }, data));
+    else {
+      // adding a name that already exists updates that item instead of duplicating it
+      const twin = alive(coll).find(x => normName(x.name) === normName(data.name));
+      if (twin) Object.assign(twin, data);
+      else coll.push(Object.assign({ id: uid() }, data));
+    }
     save(); renderLibrary(); toast("Saved"); libSync();
     if (sessionDlgOpen){ populateSessionSelects(); $("#dlg-session").showModal(); }
   }
@@ -741,6 +776,7 @@ function init(){
   setInterval(flushQueue, 30000);
   setInterval(libSync, 120000);
 
+  if (dedupeLibrary()) save();
   if (activeSession()) prefillDraft();
   renderDial(); renderSyncChip();
   flushQueue();
